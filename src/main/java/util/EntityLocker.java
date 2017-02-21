@@ -3,8 +3,6 @@ package util;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Reusable utility class that provides synchronization mechanism similar to row-level DB locking.
@@ -14,7 +12,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * EntityLocker itself does not deal with the entities, only with the IDs (primary keys) of the entities.
  */
 public class EntityLocker<T extends Comparable<T>> {
-    private ConcurrentMap<T, ReentrantLock> lockByID = new ConcurrentHashMap<>();
+    private ConcurrentMap<T, CountLock> lockByID = new ConcurrentHashMap<>();
     /**
      * Max locked ID (for deadlock prevention)
      */
@@ -42,7 +40,7 @@ public class EntityLocker<T extends Comparable<T>> {
         }
 
         // Create lock
-        Lock lock = getLock(ID);
+        CountLock lock = getLock(ID);
         boolean locked;
         if (timeOut == -1) {
             lock.lock();
@@ -58,13 +56,18 @@ public class EntityLocker<T extends Comparable<T>> {
                 // Run protected code
                 protectedCode.run();
             } finally {
+
+                if (lock.getEnters() == 1)
+                    lockByID.remove(ID);
+
                 lock.unlock();
+
                 maxLockedId.set(prevID);
             }
         }
     }
 
-    private Lock getLock(T ID) {
-        return lockByID.computeIfAbsent(ID, k -> new ReentrantLock());
+    private CountLock getLock(T ID) {
+        return lockByID.computeIfAbsent(ID, k -> new CountLock());
     }
 }
